@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
+interface ApiError {
+  message: string;
+  status?: number;
+}
+
 export function LoginWindow() {
   const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'user'>('user');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -17,18 +21,23 @@ export function LoginWindow() {
 
     try {
       if (isLogin) {
-        const success = await login(username, password);
-        if (!success) {
-          setError('Invalid username or password');
-        }
+        await login(username, password);
       } else {
-        const success = await register(username, password, role);
-        if (!success) {
-          setError('Username already exists');
-        }
+        await register(username, password);
       }
     } catch (err) {
-      setError('An error occurred');
+      const apiError = err as ApiError;
+      if (apiError.status === 401) {
+        setError('Invalid username or password');
+      } else if (apiError.status === 409 || apiError.message?.toLowerCase().includes('exists')) {
+        setError('Username already exists');
+      } else if (apiError.status === 400) {
+        setError('Invalid request. Please check your input.');
+      } else if (!navigator.onLine) {
+        setError('No internet connection');
+      } else {
+        setError(apiError.message || 'An error occurred. Please try again.');
+      }
     }
 
     setLoading(false);
@@ -67,6 +76,7 @@ export function LoginWindow() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                minLength={3}
               />
             </label>
           </div>
@@ -80,25 +90,10 @@ export function LoginWindow() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={6}
               />
             </label>
           </div>
-
-          {!isLogin && (
-            <div className="mb-2">
-              <label className="text-xs flex items-center gap-2">
-                <span className="w-20">Account type:</span>
-                <select
-                  className="xp-input flex-1"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as 'admin' | 'user')}
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </label>
-            </div>
-          )}
 
           {error && (
             <div className="text-red-600 text-xs mb-2 flex items-center gap-1">
@@ -132,9 +127,9 @@ export function LoginWindow() {
 
         {isLogin && (
           <div className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
-            <p>Demo credentials:</p>
-            <p>• Admin: admin / admin123</p>
-            <p>• User: user / user123</p>
+            <p>Use credentials:</p>
+            <p>• Admin: admin / @Vaibhav1</p>
+            <p>• User: user / @Vaibhav1</p>
           </div>
         )}
       </div>

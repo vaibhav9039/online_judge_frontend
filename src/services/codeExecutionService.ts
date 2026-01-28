@@ -1,148 +1,209 @@
-// Demo Code Execution Service
-// Replace this with real API calls (e.g., Judge0, Piston) in the future
 
+import { API_CONFIG } from '../config/environment';
+import { tokenService } from '../services/authService';
 export interface ExecutionResult {
   output: string;
   error: string | null;
   executionTime: number;
   status: "success" | "error" | "timeout";
 }
-
-// Demo responses - replace with actual API integration
-const demoResponses: Record<string, (code: string) => ExecutionResult> = {
-  java: (code: string) => {
-    if (code.includes("System.out.println")) {
-      const match = code.match(/System\.out\.println\s*\(\s*["'](.*)["']\s*\)/);
-      const output = match ? match[1] : "Hello, World!";
-      return {
-        output: `${output}\n\nProcess finished with exit code 0`,
-        error: null,
-        executionTime: Math.random() * 500 + 100,
-        status: "success",
-      };
-    }
-    if (code.includes("class") && code.includes("main")) {
-      return {
-        output:
-          "Program executed successfully.\n\nProcess finished with exit code 0",
-        error: null,
-        executionTime: Math.random() * 500 + 200,
-        status: "success",
-      };
-    }
-    return {
-      output: "",
-      error: "Error: Main method not found in class",
-      executionTime: 50,
-      status: "error",
-    };
-  },
-  cpp: (code: string) => {
-    if (code.includes("cout")) {
-      const match = code.match(/cout\s*<<\s*["'](.*)["']/);
-      const output = match ? match[1] : "Hello, World!";
-      return {
-        output: `${output}\n\nProcess exited with code 0`,
-        error: null,
-        executionTime: Math.random() * 300 + 50,
-        status: "success",
-      };
-    }
-    if (code.includes("printf")) {
-      const match = code.match(/printf\s*\(\s*["'](.*)["']/);
-      const output = match ? match[1].replace("\\n", "\n") : "Hello, World!";
-      return {
-        output: `${output}\n\nProcess exited with code 0`,
-        error: null,
-        executionTime: Math.random() * 300 + 50,
-        status: "success",
-      };
-    }
-    if (code.includes("int main")) {
-      return {
-        output: "Program executed successfully.\n\nProcess exited with code 0",
-        error: null,
-        executionTime: Math.random() * 300 + 100,
-        status: "success",
-      };
-    }
-    return {
-      output: "",
-      error: "error: 'main' must return 'int'",
-      executionTime: 30,
-      status: "error",
-    };
-  },
-};
+export interface CodeRunRequest {
+  language: 'JAVA' | 'CPP';
+  code: string;
+  input: string;
+}
 
 export async function executeCode(
   code: string,
-  language: "java" | "cpp"
+  language: 'java' | 'cpp',
+  input: string = ''
 ): Promise<ExecutionResult> {
-  // Simulate network delay
-  await new Promise((resolve) =>
-    setTimeout(resolve, 1000 + Math.random() * 1000)
-  );
-
-  const handler = demoResponses[language];
-  if (!handler) {
+  const startTime = Date.now();
+  const accessToken = tokenService.getAccessToken();
+  try {
+    const response = await fetch(`${API_CONFIG.BASE_URL}/api/guest/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
+      },
+      body: JSON.stringify({
+        language: language.toUpperCase(),
+        code,
+        input,
+      }),
+    });
+    const executionTime = Date.now() - startTime;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        output: '',
+        error: errorData.message || errorData.error || `Execution failed with status ${response.status}`,
+        executionTime,
+        status: 'error',
+      };
+    }
+    const result = await response.json();
+    const output = result.output || result.stdout || '';
+    const error = result.error || result.stderr || null;
+    
     return {
-      output: "",
-      error: `Language '${language}' not supported`,
-      executionTime: 0,
-      status: "error",
+      output: output || (error ? '' : 'Program executed successfully with no output.'),
+      error,
+      executionTime: result.executionTime || executionTime,
+      status: error ? 'error' : 'success',
+    };
+  } catch (error) {
+    const executionTime = Date.now() - startTime;
+    return {
+      output: '',
+      error: error instanceof Error ? error.message : 'Network error - could not connect to server',
+      executionTime,
+      status: 'error',
     };
   }
-
-  return handler(code);
 }
 
-// Configuration for future API integration
-export const API_CONFIG = {
-  // Judge0 API (https://judge0.com/)
-  JUDGE0_URL: "https://judge0-ce.p.rapidapi.com",
-  JUDGE0_API_KEY: "", // Add your API key here
-
-  // Piston API (https://github.com/engineer-man/piston)
-  PISTON_URL: "https://emkc.org/api/v2/piston",
-
-  // Language IDs for Judge0
-  LANGUAGE_IDS: {
-    java: 62,
-    cpp: 54,
+export const CODE_TEMPLATES = {
+  java: {
+    'Hello World': `public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+    }
+}`,
+    'Read Input': `import java.util.Scanner;
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Enter your name: ");
+        String name = scanner.nextLine();
+        System.out.println("Hello, " + name + "!");
+        scanner.close();
+    }
+}`,
+    'Sum Two Numbers': `import java.util.Scanner;
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        int a = scanner.nextInt();
+        int b = scanner.nextInt();
+        System.out.println("Sum: " + (a + b));
+        scanner.close();
+    }
+}`,
+    'Fibonacci': `public class Main {
+    public static void main(String[] args) {
+        int n = 10;
+        int a = 0, b = 1;
+        System.out.print("Fibonacci: ");
+        for (int i = 0; i < n; i++) {
+            System.out.print(a + " ");
+            int temp = a + b;
+            a = b;
+            b = temp;
+        }
+    }
+}`,
+    'Array Operations': `import java.util.Arrays;
+public class Main {
+    public static void main(String[] args) {
+        int[] arr = {64, 34, 25, 12, 22, 11, 90};
+        System.out.println("Original: " + Arrays.toString(arr));
+        Arrays.sort(arr);
+        System.out.println("Sorted: " + Arrays.toString(arr));
+    }
+}`,
+  },
+  cpp: {
+    'Hello World': `#include <iostream>
+using namespace std;
+int main() {
+    cout << "Hello, World!" << endl;
+    return 0;
+}`,
+    'Read Input': `#include <iostream>
+#include <string>
+using namespace std;
+int main() {
+    string name;
+    cout << "Enter your name: ";
+    getline(cin, name);
+    cout << "Hello, " << name << "!" << endl;
+    return 0;
+}`,
+    'Sum Two Numbers': `#include <iostream>
+using namespace std;
+int main() {
+    int a, b;
+    cin >> a >> b;
+    cout << "Sum: " << (a + b) << endl;
+    return 0;
+}`,
+    'Fibonacci': `#include <iostream>
+using namespace std;
+int main() {
+    int n = 10, a = 0, b = 1;
+    cout << "Fibonacci: ";
+    for (int i = 0; i < n; i++) {
+        cout << a << " ";
+        int temp = a + b;
+        a = b;
+        b = temp;
+    }
+    return 0;
+}`,
+    'Vector Operations': `#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+int main() {
+    vector<int> arr = {64, 34, 25, 12, 22, 11, 90};
+    cout << "Original: ";
+    for (int x : arr) cout << x << " ";
+    cout << endl;
+    
+    sort(arr.begin(), arr.end());
+    cout << "Sorted: ";
+    for (int x : arr) cout << x << " ";
+    return 0;
+}`,
   },
 };
 
-// Example of how to integrate with Judge0 API
-export async function executeCodeWithJudge0(
-  code: string,
-  language: "java" | "cpp"
-): Promise<ExecutionResult> {
-  // Uncomment and configure when ready to use real API
-  /*
-  const response = await fetch(`${API_CONFIG.JUDGE0_URL}/submissions?base64_encoded=false&wait=true`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-RapidAPI-Key': API_CONFIG.JUDGE0_API_KEY,
-      'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com',
-    },
-    body: JSON.stringify({
-      source_code: code,
-      language_id: API_CONFIG.LANGUAGE_IDS[language],
-    }),
-  });
-
-  const result = await response.json();
-  
-  return {
-    output: result.stdout || '',
-    error: result.stderr || result.compile_output || null,
-    executionTime: parseFloat(result.time) * 1000,
-    status: result.status.id === 3 ? 'success' : 'error',
-  };
-  */
-
-  // For now, use demo execution
-  return executeCode(code, language);
+export interface HistoryItem {
+  id: string;
+  code: string;
+  language: 'java' | 'cpp';
+  input: string;
+  result: ExecutionResult;
+  timestamp: Date;
 }
+const HISTORY_KEY = 'code_runner_history';
+const MAX_HISTORY = 10;
+export const historyService = {
+  getHistory: (): HistoryItem[] => {
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY);
+      if (!stored) return [];
+      return JSON.parse(stored).map((item: HistoryItem) => ({
+        ...item,
+        timestamp: new Date(item.timestamp),
+      }));
+    } catch {
+      return [];
+    }
+  },
+  addToHistory: (item: Omit<HistoryItem, 'id' | 'timestamp'>): void => {
+    const history = historyService.getHistory();
+    const newItem: HistoryItem = {
+      ...item,
+      id: Date.now().toString(),
+      timestamp: new Date(),
+    };
+    const updated = [newItem, ...history].slice(0, MAX_HISTORY);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  },
+  clearHistory: (): void => {
+    localStorage.removeItem(HISTORY_KEY);
+  },
+};
