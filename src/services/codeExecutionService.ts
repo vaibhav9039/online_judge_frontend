@@ -21,7 +21,7 @@ export async function executeCode(
   const startTime = Date.now();
   const accessToken = tokenService.getAccessToken();
   try {
-    const response = await fetch(`${API_CONFIG.BASE_URL}/api/guest/run`, {
+    const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.GUEST.RUN}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

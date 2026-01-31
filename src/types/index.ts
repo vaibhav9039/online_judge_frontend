@@ -5,23 +5,28 @@ export interface User {
 }
 
 export interface Problem {
-  id: string;
+  id: number;
   title: string;
   description: string;
+  examplesJson: string;
+  constraints: string;
+  tags: string[];
+  timeLimitMs?: number;
+  memoryLimitKb?: number;
   difficulty: "Easy" | "Medium" | "Hard";
-  testCases: TestCase[];
-  createdAt: Date;
+  createdByUserId: number;
 }
 
 export interface TestCase {
-  id: string;
-  input: string;
+  id: number;
+  problemId: number;
+  inputData: string;
   expectedOutput: string;
 }
 
 export interface Submission {
-  id: string;
-  problemId: string;
+  id: number;
+  problemId: number;
   problemTitle: string;
   code: string;
   language: string;
@@ -44,4 +49,9 @@ export interface XPWindow {
   zIndex: number;
   position: { x: number; y: number };
   size: { width: number; height: number };
+}
+
+export interface ProblemExample {
+  input: Record<string, any>;
+  output: any;
 }

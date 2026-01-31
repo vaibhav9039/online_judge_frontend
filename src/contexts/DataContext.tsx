@@ -1,152 +1,205 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Problem, Submission, TestCase } from '../types';
+import { problemsApi, testCasesApi, CreateProblemRequest, UpdateProblemRequest } from '../services/problemService';
+import { useToast } from '../hooks/use-toast';
 
 interface DataContextType {
   problems: Problem[];
   submissions: Submission[];
-  addProblem: (problem: Omit<Problem, 'id' | 'createdAt'>) => void;
-  updateProblem: (id: string, problem: Partial<Problem>) => void;
-  deleteProblem: (id: string) => void;
-  addTestCase: (problemId: string, testCase: Omit<TestCase, 'id'>) => void;
-  deleteTestCase: (problemId: string, testCaseId: string) => void;
-  submitSolution: (problemId: string, code: string, language: string) => void;
+  isLoading: boolean;
+  error: string | null;
+  // Problems
+  fetchProblems: (page?: number, size?: number, title?: string) => Promise<void>;
+  addProblem: (problem: CreateProblemRequest) => Promise<Problem | null>;
+  updateProblem: (id: number, problem: UpdateProblemRequest) => Promise<Problem | null>;
+  deleteProblem: (id: number) => Promise<boolean>;
+  // Test Cases
+  fetchTestCases: (problemId: number) => Promise<TestCase[]>;
+  addTestCase: (problemId: number, inputData: string, expectedOutput: string) => Promise<TestCase | null>;
+  updateTestCase: (id: number, problemId: number, inputData: string, expectedOutput: string) => Promise<TestCase | null>;
+  deleteTestCase: (id: number) => Promise<boolean>;
+  // Submissions (local for now)
+  submitSolution: (problemId: number, code: string, language: string) => void;
+  // Pagination info
+  pagination: {
+    page: number;
+    size: number;
+    totalElements: number;
+    totalPages: number;
+  };
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-// Initial mock data
-const initialProblems: Problem[] = [
-  {
-    id: '1',
-    title: 'Two Sum',
-    description: 'Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.',
-    difficulty: 'Easy',
-    testCases: [
-      { id: '1', input: '[2,7,11,15], target=9', expectedOutput: '[0,1]' },
-      { id: '2', input: '[3,2,4], target=6', expectedOutput: '[1,2]' },
-    ],
-    createdAt: new Date('2024-01-15'),
-  },
-  {
-    id: '2',
-    title: 'Reverse String',
-    description: 'Write a function that reverses a string. The input string is given as an array of characters.',
-    difficulty: 'Easy',
-    testCases: [
-      { id: '1', input: '["h","e","l","l","o"]', expectedOutput: '["o","l","l","e","h"]' },
-    ],
-    createdAt: new Date('2024-01-16'),
-  },
-  {
-    id: '3',
-    title: 'Binary Tree Maximum Path Sum',
-    description: 'Given a non-empty binary tree, find the maximum path sum.',
-    difficulty: 'Hard',
-    testCases: [
-      { id: '1', input: '[1,2,3]', expectedOutput: '6' },
-    ],
-    createdAt: new Date('2024-01-17'),
-  },
-];
-
-const initialSubmissions: Submission[] = [
-  {
-    id: '1',
-    problemId: '1',
-    problemTitle: 'Two Sum',
-    code: 'function twoSum(nums, target) { ... }',
-    language: 'JavaScript',
-    status: 'Accepted',
-    submittedAt: new Date('2024-01-20'),
-  },
-  {
-    id: '2',
-    problemId: '2',
-    problemTitle: 'Reverse String',
-    code: 'function reverseString(s) { ... }',
-    language: 'JavaScript',
-    status: 'Wrong Answer',
-    submittedAt: new Date('2024-01-21'),
-  },
-];
-
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [problems, setProblems] = useState<Problem[]>(initialProblems);
-  const [submissions, setSubmissions] = useState<Submission[]>(initialSubmissions);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 0,
+    size: 10,
+    totalElements: 0,
+    totalPages: 0,
+  });
 
-  const addProblem = (problem: Omit<Problem, 'id' | 'createdAt'>) => {
-    const newProblem: Problem = {
-      ...problem,
-      id: Math.random().toString(36).substr(2, 9),
-      createdAt: new Date(),
-    };
-    setProblems((prev) => [...prev, newProblem]);
+  const { toast } = useToast();
+
+  const fetchProblems = useCallback(async (page: number = 0, size: number = 10, title?: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await problemsApi.getProblems(page, size, title);
+      setProblems(response.content);
+      setPagination({
+        page: response.number,
+        size: response.size,
+        totalElements: response.totalElements,
+        totalPages: response.totalPages,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch problems';
+      setError(message);
+      toast({
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  const addProblem = async (problemData: CreateProblemRequest): Promise<Problem | null> => {
+    setIsLoading(true);
+    try {
+      const newProblem = await problemsApi.createProblem(problemData);
+      setProblems((prev) => [...prev, newProblem]);
+      toast({ title: 'Success', description: 'Problem created successfully' });
+      return newProblem;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create problem';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const updateProblem = (id: string, updates: Partial<Problem>) => {
-    setProblems((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
-    );
+  const updateProblem = async (id: number, updates: UpdateProblemRequest): Promise<Problem | null> => {
+    setIsLoading(true);
+    try {
+      const updatedProblem = await problemsApi.updateProblem(id, updates);
+      setProblems((prev) => prev.map((p) => (p.id === id ? updatedProblem : p)));
+      toast({ title: 'Success', description: 'Problem updated successfully' });
+      return updatedProblem;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update problem';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const deleteProblem = (id: string) => {
-    setProblems((prev) => prev.filter((p) => p.id !== id));
+  const deleteProblem = async (id: number): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      await problemsApi.deleteProblem(id);
+      setProblems((prev) => prev.filter((p) => p.id !== id));
+      toast({ title: 'Success', description: 'Problem deleted successfully' });
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete problem';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const addTestCase = (problemId: string, testCase: Omit<TestCase, 'id'>) => {
-    const newTestCase: TestCase = {
-      ...testCase,
-      id: Math.random().toString(36).substr(2, 9),
-    };
-    setProblems((prev) =>
-      prev.map((p) =>
-        p.id === problemId
-          ? { ...p, testCases: [...p.testCases, newTestCase] }
-          : p
-      )
-    );
+  const fetchTestCases = async (problemId: number): Promise<TestCase[]> => {
+    try {
+      return await testCasesApi.getTestCases(problemId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch test cases';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return [];
+    }
   };
 
-  const deleteTestCase = (problemId: string, testCaseId: string) => {
-    setProblems((prev) =>
-      prev.map((p) =>
-        p.id === problemId
-          ? { ...p, testCases: p.testCases.filter((tc) => tc.id !== testCaseId) }
-          : p
-      )
-    );
+  const addTestCase = async (problemId: number, inputData: string, expectedOutput: string): Promise<TestCase | null> => {
+    try {
+      const newTestCase = await testCasesApi.createTestCase({ problemId, inputData, expectedOutput });
+      toast({ title: 'Success', description: 'Test case created successfully' });
+      return newTestCase;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create test case';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return null;
+    }
   };
 
-  const submitSolution = (problemId: string, code: string, language: string) => {
+  const updateTestCase = async (id: number, problemId: number, inputData: string, expectedOutput: string): Promise<TestCase | null> => {
+    try {
+      const updatedTestCase = await testCasesApi.updateTestCase(id, { problemId, inputData, expectedOutput });
+      toast({ title: 'Success', description: 'Test case updated successfully' });
+      return updatedTestCase;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update test case';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return null;
+    }
+  };
+
+  const deleteTestCase = async (id: number): Promise<boolean> => {
+    try {
+      await testCasesApi.deleteTestCase(id);
+      toast({ title: 'Success', description: 'Test case deleted successfully' });
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete test case';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+      return false;
+    }
+  };
+
+  const submitSolution = (problemId: number, code: string, language: string) => {
+    // Placeholder for local submissions
     const problem = problems.find((p) => p.id === problemId);
     if (!problem) return;
-
-    const statuses: Submission['status'][] = ['Accepted', 'Wrong Answer', 'Time Limit Exceeded', 'Runtime Error'];
-    const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-
-    const newSubmission: Submission = {
-      id: Math.random().toString(36).substr(2, 9),
-      problemId,
-      problemTitle: problem.title,
-      code,
-      language,
-      status: randomStatus,
-      submittedAt: new Date(),
-    };
-    setSubmissions((prev) => [newSubmission, ...prev]);
+    // const newSubmission: Submission = {
+    //   id: Date.now(),
+    //   problemId,
+    //   code,
+    //   language,
+    //   status: 'Pending',
+    //   submittedAt: new Date(),
+    // };
+    // setSubmissions((prev) => [...prev, newSubmission]);
   };
+
+  useEffect(() => {
+    fetchProblems();
+  }, [fetchProblems]);
 
   return (
     <DataContext.Provider
       value={{
         problems,
         submissions,
+        isLoading,
+        error,
+        fetchProblems,
         addProblem,
         updateProblem,
         deleteProblem,
+        fetchTestCases,
         addTestCase,
+        updateTestCase,
         deleteTestCase,
         submitSolution,
+        pagination,
       }}
     >
       {children}
@@ -156,8 +209,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
 export function useData() {
   const context = useContext(DataContext);
-  if (!context) {
-    throw new Error('useData must be used within a DataProvider');
-  }
+  if (!context) throw new Error('useData must be used within a DataProvider');
   return context;
 }

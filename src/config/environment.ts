@@ -10,6 +10,9 @@ export const API_CONFIG = {
     LOGOUT: '/api/auth/logout',
     REFRESH: '/api/auth/refresh',
   },
+  GUEST: {
+    RUN: '/api/guest/run'
+  }
 };
 
 // Token storage keys
